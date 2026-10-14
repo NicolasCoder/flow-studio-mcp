@@ -1,0 +1,52 @@
+{
+  "rpc_ids": {
+    "video_generate": ["YhhmEf", "eb1hJf"],
+    "image_generate": ["ogiZ0b"],
+    "status_poll": "jwpduf"
+  },
+  "selectors": {
+    "new_project_btn": "button:has-text(\"New project\"), button:has-text(\"Novo projeto\"), a:has-text(\"New project\"), a:has-text(\"Novo projeto\")",
+    "prompt_editor": ".ProseMirror",
+    "clear_prompt_btn": "button[aria-label=\"Clear prompt\"], button[aria-label=\"Limpar prompt\"]",
+    "image_ingredient_chip": "button[aria-label=\"Image ingredient\"]",
+    "settings_trigger": "[aria-label=\"Settings trigger\"], [aria-label*=\"Configura\"], button:has-text(\"crop_\")",
+    "tab_image": ".cdk-overlay-container button:has-text(\"Image\"), .cdk-overlay-container button:has-text(\"Imagem\")",
+    "tab_video": ".cdk-overlay-container button:has-text(\"Video\"), .cdk-overlay-container button:has-text(\"Vídeo\")",
+    "submode_frames": ".cdk-overlay-container button:has-text(\"Frames\"), .cdk-overlay-container button:has-text(\"Quadros\")",
+    "submode_ingredients": ".cdk-overlay-container button:has-text(\"Ingredients\"), .cdk-overlay-container button:has-text(\"Ingredientes\")",
+    "model_dropdown": ".cdk-overlay-container button:has-text(\"arrow_drop_down\")",
+    "model_options": ".cdk-overlay-container [role=\"menuitem\"], .cdk-overlay-container button",
+    "slot_start_frame": "button:text-is(\"Start\"), button:has-text(\"Start\")",
+    "slot_end_frame": "button:text-is(\"End\"), button:has-text(\"End\")",
+    "swap_frames_btn": "button[aria-label=\"Swap first and last frames\"]",
+    "slot_ingredients": "[aria-label=\"Add ingredients to the prompt box\"]",
+    "upload_media_btn": ".cdk-overlay-container button:has-text(\"Upload media\"), .cdk-overlay-container button:has-text(\"Upload\"), .cdk-overlay-container [role=\"menuitem\"]:has-text(\"Upload\")",
+    "start_generation_btn": "[aria-label=\"Start generation\"], [aria-label=\"Iniciar geração\"], button:has(mat-icon:text(\"arrow_forward\"))",
+    "image_tile_img": "flow-image-tile img",
+    "video_tile": "flow-video-tile"
+  },
+  "video_models": {
+    "lower_priority": "Veo 3.1 - Lite [Lower Priority]",
+    "low_priority": "Veo 3.1 - Lite [Lower Priority]",
+    "lite_low": "Veo 3.1 - Lite [Lower Priority]",
+    "veo_3_1_t2v_lite_low_priority": "Veo 3.1 - Lite [Lower Priority]",
+    "lite": "Veo 3.1 - Lite",
+    "veo_lite": "Veo 3.1 - Lite",
+    "fast": "Veo 3.1 - Fast",
+    "veo_fast": "Veo 3.1 - Fast",
+    "quality": "Veo 3.1 - Quality",
+    "veo_quality": "Veo 3.1 - Quality",
+    "omni": "Omni 1.1 Flash",
+    "flash": "Omni 1.1 Flash",
+    "abra_t2v_8s": "Omni 1.1 Flash"
+  },
+  "image_models": {
+    "2.1": "Nano Banana 2.1",
+    "nano_2.1": "Nano Banana 2.1",
+    "pro": "Nano Banana Pro",
+    "nano_pro": "Nano Banana Pro",
+    "lite": "Nano Banana 2 Lite",
+    "nano_lite": "Nano Banana 2 Lite"
+  }
+}
+

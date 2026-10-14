@@ -1,0 +1,19 @@
+{
+  "processos_simultaneos": 1,
+  "espera_minima": 5,
+  "espera_maxima": 14,
+  "modo_invisivel": true,
+  "criar_novo_projeto": true,
+  "modo": "auto",
+  "submodo_video": "auto",
+  "modelo_video": "Veo 3.1 - Lite [Lower Priority]",
+  "modelo_imagem": "Nano Banana 2.1",
+  "proporcao": "16:9",
+  "duracao": "8s",
+  "resolucao": "720p",
+  "quantidade": "x1",
+  "imagem_in": "",
+  "imagem_out": "",
+  "ingredientes": []
+}
+
