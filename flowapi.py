@@ -580,6 +580,8 @@ async def configurar_geracao(page, item, config):
         submodo = "ingredients"
 
     try:
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.3)
         await limpar_barra_prompt(page)
         btn = page.locator(sels["settings_trigger"]).first
         if await btn.count() == 0:
@@ -644,14 +646,14 @@ async def configurar_geracao(page, item, config):
                     await res_btn.click()
                     await asyncio.sleep(0.3)
             if duracao:
-                dur_btn = page.locator(f'.cdk-overlay-container button:text-is("{duracao}")').first
+                dur_btn = page.locator(f'.cdk-overlay-container button:has-text("{duracao}")').first
                 if await dur_btn.count() > 0:
                     await dur_btn.click()
                     await asyncio.sleep(0.3)
 
         # 6. Selecionar Quantidade
         if quantidade:
-            qtd_btn = page.locator(f'.cdk-overlay-container button:text-is("{quantidade}")').first
+            qtd_btn = page.locator(f'.cdk-overlay-container button:has-text("{quantidade}")').first
             if await qtd_btn.count() > 0:
                 await qtd_btn.click()
                 await asyncio.sleep(0.3)
@@ -704,9 +706,14 @@ async def anexar_midia_no_slot(page, seletor_botao_slot, caminho_arquivo, nome_s
         item_btn = page.locator(f'.cdk-overlay-container button:has-text("{nome_sem_ext}")').first
         if await item_btn.count() > 0:
             await item_btn.click()
-            await asyncio.sleep(0.8)
-            await page.keyboard.press("Escape")
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
+            add_btn = page.locator('.cdk-overlay-container button.detail-add-to-prompt-btn, .cdk-overlay-container button:has-text("Add to prompt"), .cdk-overlay-container button:has-text("Adicionar ao prompt")').first
+            if await add_btn.count() > 0:
+                await add_btn.click()
+                await asyncio.sleep(0.6)
+            else:
+                await page.keyboard.press("Escape")
+                await asyncio.sleep(0.3)
             return True
         else:
             await page.keyboard.press("Escape")
@@ -741,9 +748,10 @@ async def aplicar_frames_e_ingredientes(page, item):
         await anexar_midia_no_slot(page, sels["slot_ingredients"], ing, "Ingrediente")
 
 
-def extrair_media_id_video(body):
+def extrair_media_id_video(body, project_id=""):
     sels = carregar_seletores()
-    video_rpcs = tuple(sels["rpc_ids"]["video_generate"] + [sels["rpc_ids"]["status_poll"]])
+    poll_rpc = sels["rpc_ids"]["status_poll"]
+    video_rpcs = tuple(sels["rpc_ids"]["video_generate"] + [poll_rpc])
     for line in body.split("\n"):
         line = line.strip()
         if line.startswith("[") and any(rpc in line for rpc in video_rpcs):
@@ -753,12 +761,16 @@ def extrair_media_id_video(body):
                 inner_str = parsed[0][2]
                 if inner_str:
                     inner = json.loads(inner_str)
+                    if rpc_id == poll_rpc:
+                        if inner and len(inner) > 2 and inner[2]:
+                            return inner[2][0][0], None
                     if rpc_id in sels["rpc_ids"]["video_generate"]:
                         if inner and len(inner) > 3 and inner[3]:
                             return inner[3][0][0], None
-                    elif rpc_id == sels["rpc_ids"]["status_poll"]:
-                        if inner and len(inner) > 2 and inner[2]:
-                            return inner[2][0][0], None
+                    uuids = re.findall(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", inner_str)
+                    for u in uuids:
+                        if not project_id or u.lower() != project_id.lower():
+                            return u, None
                 else:
                     error_info = parsed[0][5] if len(parsed[0]) > 5 else None
                     return None, error_info
@@ -788,10 +800,15 @@ def extrair_media_id_ogiz0b(body, project_id):
     return None, "Padrao ogiZ0b nao encontrado na resposta"
 
 
+IDS_VIDEO_CONHECIDOS = set()
+
+
 async def gerar_video(page, item, params):
     sels_all = carregar_seletores()
     sels = sels_all["selectors"]
-    video_rpcs = sels_all["rpc_ids"]["video_generate"]
+    poll_rpc = sels_all["rpc_ids"]["status_poll"]
+    video_rpcs = list(sels_all["rpc_ids"]["video_generate"]) + [poll_rpc]
+    project_id = params.get("projectId", "")
     prompt = item.get("prompt", "")
     try:
         await aplicar_frames_e_ingredientes(page, item)
@@ -804,20 +821,34 @@ async def gerar_video(page, item, params):
         await asyncio.sleep(0.5)
 
         gen_btn = page.locator(sels["start_generation_btn"]).first
+        captured_media_id = []
 
-        def is_video_gen_rpc(r):
-            return any(f"rpcids={rpc}" in r.url for rpc in video_rpcs)
+        async def on_resp(r):
+            if any(f"rpcids={rpc}" in r.url for rpc in video_rpcs) and r.status == 200:
+                try:
+                    txt = await r.text()
+                    if txt:
+                        mid, _ = extrair_media_id_video(txt, project_id)
+                        if mid and mid not in IDS_VIDEO_CONHECIDOS and mid not in captured_media_id:
+                            IDS_VIDEO_CONHECIDOS.add(mid)
+                            captured_media_id.append(mid)
+                except Exception:
+                    pass
 
-        async with page.expect_response(is_video_gen_rpc, timeout=30000) as resp_info:
+        page.on("response", on_resp)
+        try:
             await gen_btn.click()
+            for _ in range(60):
+                if captured_media_id:
+                    return captured_media_id[0]
+                await asyncio.sleep(0.5)
+        finally:
+            try:
+                page.remove_listener("response", on_resp)
+            except Exception:
+                pass
 
-        resp = await resp_info.value
-        if resp.status != 200:
-            return None
-
-        body = await resp.text()
-        media_id, _ = extrair_media_id_video(body)
-        return media_id
+        return captured_media_id[0] if captured_media_id else None
     except Exception as e:
         print(f"[X] Erro ao disparar geracao de video: {e}")
         return None
@@ -1043,9 +1074,15 @@ async def baixar_video(page, media_id, caminho_final, params):
                         media_id,
                     )
                     for s in srcs:
-                        if media_id in s or s not in URLS_VIDEO_BAIXADAS:
+                        if media_id and media_id in s:
                             video_src = s
                             break
+                    if not video_src:
+                        for s in srcs:
+                            if s not in URLS_VIDEO_BAIXADAS and not any(
+                                mid in s for mid in [media_id] if mid
+                            ):
+                                pass
                     if video_src:
                         break
                 except Exception:

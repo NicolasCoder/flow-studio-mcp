@@ -21,6 +21,7 @@
     "swap_frames_btn": "button[aria-label=\"Swap first and last frames\"]",
     "slot_ingredients": "[aria-label=\"Add ingredients to the prompt box\"]",
     "upload_media_btn": ".cdk-overlay-container button:has-text(\"Upload media\"), .cdk-overlay-container button:has-text(\"Upload\"), .cdk-overlay-container [role=\"menuitem\"]:has-text(\"Upload\")",
+    "detail_add_to_prompt_btn": ".cdk-overlay-container button.detail-add-to-prompt-btn, .cdk-overlay-container button:has-text(\"Add to prompt\"), .cdk-overlay-container button:has-text(\"Adicionar ao prompt\")",
     "start_generation_btn": "[aria-label=\"Start generation\"], [aria-label=\"Iniciar geração\"], button:has(mat-icon:text(\"arrow_forward\"))",
     "image_tile_img": "flow-image-tile img",
     "video_tile": "flow-video-tile"
