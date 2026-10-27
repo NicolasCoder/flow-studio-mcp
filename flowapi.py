@@ -895,12 +895,16 @@ async def gerar_imagem(page, item, params):
         if resp.status != 200:
             return None
 
-        body = await resp.text()
-        media_id, _ = extrair_media_id_ogiz0b(body, params.get("projectId", ""))
+        media_id = None
+        try:
+            body = await resp.text()
+            media_id, _ = extrair_media_id_ogiz0b(body, params.get("projectId", ""))
+        except Exception:
+            media_id = None
 
         novo_src = None
         dom_id = None
-        for _ in range(35):
+        for _ in range(60):
             await asyncio.sleep(1)
             infos = await page.evaluate(
                 f"""() => {{

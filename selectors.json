@@ -1,7 +1,12 @@
 {
   "rpc_ids": {
-    "video_generate": ["YhhmEf", "eb1hJf"],
-    "image_generate": ["ogiZ0b"],
+    "video_generate": [
+      "YhhmEf",
+      "eb1hJf"
+    ],
+    "image_generate": [
+      "ogiZ0b"
+    ],
     "status_poll": "jwpduf"
   },
   "selectors": {
@@ -21,10 +26,10 @@
     "swap_frames_btn": "button[aria-label=\"Swap first and last frames\"]",
     "slot_ingredients": "[aria-label=\"Add ingredients to the prompt box\"]",
     "upload_media_btn": ".cdk-overlay-container button:has-text(\"Upload media\"), .cdk-overlay-container button:has-text(\"Upload\"), .cdk-overlay-container [role=\"menuitem\"]:has-text(\"Upload\")",
-    "detail_add_to_prompt_btn": ".cdk-overlay-container button.detail-add-to-prompt-btn, .cdk-overlay-container button:has-text(\"Add to prompt\"), .cdk-overlay-container button:has-text(\"Adicionar ao prompt\")",
     "start_generation_btn": "[aria-label=\"Start generation\"], [aria-label=\"Iniciar geração\"], button:has(mat-icon:text(\"arrow_forward\"))",
-    "image_tile_img": "flow-image-tile img",
-    "video_tile": "flow-video-tile"
+    "image_tile_img": "flow-image-tile img, img[src*=\"flow-content.google/image/\"]",
+    "video_tile": "flow-video-tile",
+    "detail_add_to_prompt_btn": ".cdk-overlay-container button.detail-add-to-prompt-btn, .cdk-overlay-container button:has-text(\"Add to prompt\"), .cdk-overlay-container button:has-text(\"Adicionar ao prompt\")"
   },
   "video_models": {
     "lower_priority": "Veo 3.1 - Lite [Lower Priority]",
@@ -50,4 +55,3 @@
     "nano_lite": "Nano Banana 2 Lite"
   }
 }
-
