@@ -400,14 +400,18 @@ class FlowCentralDaemon:
             self.queue.task_done()
 
     def _rebuild_queue(self):
-        """Reconstroi a PriorityQueue com os jobs ainda pendentes na nova ordem de prioridade."""
-        new_q = asyncio.PriorityQueue()
+        """Reconstroi a PriorityQueue in-place para nao orfanar o await self.queue.get() do worker_loop."""
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+                self.queue.task_done()
+            except Exception:
+                break
         queued_jobs = [j for j in self.jobs.values() if j.get("status") == "queued"]
         queued_jobs.sort(key=lambda x: (int(x.get("priority", 100)), x.get("created_at", "")))
         for j in queued_jobs:
             self._counter += 1
-            new_q.put_nowait((int(j.get("priority", 100)), self._counter, j["job_id"]))
-        self.queue = new_q
+            self.queue.put_nowait((int(j.get("priority", 100)), self._counter, j["job_id"]))
 
     def set_job_priority(self, job_id: str, new_priority: int) -> bool:
         job = self.jobs.get(job_id)
