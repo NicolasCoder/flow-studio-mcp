@@ -956,7 +956,7 @@ async def checar_status(page, media_id, params, tipo="video"):
     }""",
         media_id,
     )
-    if video_src and ("flow-content.google" in video_src or "/asb/" in video_src):
+    if video_src and ("flow-content.google" in video_src or "/asb/" in video_src) and media_id in EDIT_IDS_POR_MEDIA_ID:
         return True, video_src
 
     result = await page.evaluate(
@@ -1001,9 +1001,6 @@ async def checar_status(page, media_id, params, tipo="video"):
                 inner_str = parsed[0][2]
                 if inner_str:
                     inner = json.loads(inner_str)
-                    data_str = json.dumps(inner)
-                    if "flow-content.google" in data_str:
-                        return True, inner
                     try:
                         item_data = inner[2][0]
                         if len(item_data) > 2 and isinstance(item_data[2], str):
