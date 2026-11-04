@@ -1267,7 +1267,8 @@ async def _batch_aware_process_single_job(daemon_self, job: dict):
     if is_img:
         return await daemon_self._orig_process_single_job(job)
 
-    # Video job: pull up to 3 more queued video jobs for 4x parallel cloud TPU rendering
+    # Video job: coalesce burst enqueues (0.6s) and pull up to 3 more queued video jobs for 4x parallel cloud TPU rendering
+    await asyncio.sleep(0.6)
     extra = []
     queued_candidates = [
         j for j in daemon_self.jobs.values()
