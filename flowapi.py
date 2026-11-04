@@ -1030,12 +1030,78 @@ URLS_VIDEO_BAIXADAS = set()
 EDIT_IDS_POR_MEDIA_ID = {}
 
 
+async def obter_url_video_via_rpc_as29s(page, media_id, params):
+    if not media_id:
+        return None
+    try:
+        res_txt = await page.evaluate(
+            """async (args) => {
+            const [mediaId, bl, fsid, atToken, endpointPrefix, pathname] = args;
+            const innerPayload = [mediaId];
+            const fReq = [[["as29s", JSON.stringify(innerPayload), null, "generic"]]];
+            const body = `f.req=${encodeURIComponent(JSON.stringify(fReq))}&at=${encodeURIComponent(atToken)}&`;
+            const url = `${endpointPrefix}/data/batchexecute?rpcids=as29s&source-path=${encodeURIComponent(pathname)}&bl=${bl}&f.sid=${fsid}&hl=en&_reqid=${Math.floor(Math.random()*9000000)+1000000}&rt=c`;
+            try {
+                const r = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                        'x-same-domain': '1'
+                    },
+                    body,
+                    credentials: 'include'
+                });
+                return await r.text();
+            } catch (e) {
+                return '';
+            }
+        }""",
+            [
+                media_id,
+                params.get("bl", ""),
+                params.get("fsid", ""),
+                params.get("atToken", ""),
+                params.get("endpointPrefix", "/_/AiSandboxAngularFrontend"),
+                params.get("pathname", f"/project/{params.get('projectId', '')}"),
+            ],
+        )
+        for line in (res_txt or "").split("\n"):
+            line = line.strip()
+            if line.startswith("[") and "as29s" in line:
+                try:
+                    parsed = json.loads(line)
+                    inner_str = parsed[0][2]
+                    if inner_str:
+                        m = re.search(r"https://flow-content\.google/video/[^"\\\s]+", inner_str)
+                        if m:
+                            return m.group(0)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+
 async def baixar_video(page, media_id, caminho_final, params):
     sels = carregar_seletores()["selectors"]
     video_tile_sel = sels["video_tile"]
     pasta_saida = os.path.dirname(caminho_final)
     if pasta_saida:
         os.makedirs(pasta_saida, exist_ok=True)
+
+    # 0. Caminho Ultra-Rapido via RPC direto 'as29s' (Zero navegacao de pagina, <0.5s!)
+    try:
+        direct_url = await obter_url_video_via_rpc_as29s(page, media_id, params)
+        if direct_url:
+            resp = await page.context.request.get(direct_url, timeout=60000)
+            data = await resp.body()
+            if len(data) > 10000:
+                with open(caminho_final, "wb") as f:
+                    f.write(data)
+                URLS_VIDEO_BAIXADAS.add(direct_url)
+                return True
+    except Exception as e_rpc:
+        print(f"    [!] Aviso no download RPC as29s ({media_id}): {e_rpc}")
 
     # 1. Caminho Deterministico Novo (Flow 2026-11): Navegar para /project/<projectId>/edit/<editId> e clicar Download -> 720p
     try:
