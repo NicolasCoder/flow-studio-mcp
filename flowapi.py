@@ -1072,7 +1072,7 @@ async def obter_url_video_via_rpc_as29s(page, media_id, params):
                     parsed = json.loads(line)
                     inner_str = parsed[0][2]
                     if inner_str:
-                        m = re.search(r"https://flow-content\.google/video/[^"\\\s]+", inner_str)
+                        m = re.search(r'https://flow-content\.google/video/[^"\\\s]+', inner_str)
                         if m:
                             return m.group(0)
                 except Exception:
