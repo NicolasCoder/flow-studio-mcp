@@ -1058,10 +1058,23 @@ async def baixar_video(page, media_id, caminho_final, params):
                 await asyncio.sleep(0.5)
 
             if v_src:
+                try:
+                    resp = await page.context.request.get(v_src, timeout=60000)
+                    data = await resp.body()
+                    if len(data) > 10000:
+                        with open(caminho_final, "wb") as f:
+                            f.write(data)
+                        await page.goto(f"https://flow.google.com/project/{project_id}", wait_until="domcontentloaded")
+                        await asyncio.sleep(1.2)
+                        if os.path.exists(caminho_final) and os.path.getsize(caminho_final) > 10000:
+                            return True
+                except Exception:
+                    pass
+
                 b64_data = await page.evaluate(
                     """async (u) => {
                     try {
-                        const r = await fetch(u, {credentials: 'include'});
+                        let r = await fetch(u, {credentials: 'include'}).catch(() => null); if (!r || !r.ok) r = await fetch(u).catch(() => null); if (!r) return null;
                         if (!r.ok) return null;
                         const buf = await r.arrayBuffer();
                         const bytes = new Uint8Array(buf);
