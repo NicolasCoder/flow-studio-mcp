@@ -1006,12 +1006,20 @@ async def checar_status(page, media_id, params, tipo="video"):
                         return True, inner
                     try:
                         item_data = inner[2][0]
+                        if len(item_data) > 2 and isinstance(item_data[2], str):
+                            EDIT_IDS_POR_MEDIA_ID[media_id] = item_data[2]
                         status_arr = item_data[5][8]
                         if status_arr == [3]:
                             return True, inner
+                        if isinstance(status_arr, list) and len(status_arr) > 0 and status_arr[0] == 4:
+                            raise RuntimeError(f"Geracao rejeitada pelo Google Flow: {status_arr}")
+                    except RuntimeError:
+                        raise
                     except Exception:
                         pass
                     return False, inner
+            except RuntimeError:
+                raise
             except Exception:
                 pass
 
@@ -1019,6 +1027,7 @@ async def checar_status(page, media_id, params, tipo="video"):
 
 
 URLS_VIDEO_BAIXADAS = set()
+EDIT_IDS_POR_MEDIA_ID = {}
 
 
 async def baixar_video(page, media_id, caminho_final, params):
@@ -1028,9 +1037,64 @@ async def baixar_video(page, media_id, caminho_final, params):
     if pasta_saida:
         os.makedirs(pasta_saida, exist_ok=True)
 
+    # 1. Caminho Deterministico Novo (Flow 2026-11): Navegar para /project/<projectId>/edit/<editId> e clicar Download -> 720p
+    try:
+        edit_id = EDIT_IDS_POR_MEDIA_ID.get(media_id)
+        if not edit_id and media_id:
+            try:
+                await checar_status(page, media_id, params, "video")
+                edit_id = EDIT_IDS_POR_MEDIA_ID.get(media_id)
+            except Exception:
+                edit_id = None
+
+        project_id = params.get("projectId", "")
+        if edit_id and project_id:
+            edit_url = f"https://flow.google.com/project/{project_id}/edit/{edit_id}"
+            await page.goto(edit_url, wait_until="domcontentloaded")
+            await asyncio.sleep(1.5)
+            dl_btn = page.locator('button[aria-label="Download media"], button[aria-label*="Download"]').first
+            for _ in range(15):
+                if await dl_btn.count() > 0:
+                    break
+                await asyncio.sleep(0.5)
+            if await dl_btn.count() > 0:
+                await dl_btn.click()
+                await asyncio.sleep(0.7)
+                opt_720 = page.locator(
+                    '.cdk-overlay-container button:has-text("720p"), '
+                    '.cdk-overlay-container [role="menuitem"]:has-text("720p"), '
+                    '.cdk-overlay-container button:has-text("Original")'
+                ).first
+                async with page.expect_download(timeout=60000) as dl_info:
+                    if await opt_720.count() > 0:
+                        await opt_720.click()
+                    else:
+                        await dl_btn.click()
+                dl = await dl_info.value
+                await dl.save_as(caminho_final)
+                back_btn = page.locator('button[aria-label="Back button to go to previous page"]').first
+                if await back_btn.count() > 0:
+                    await back_btn.click()
+                    await asyncio.sleep(1.0)
+                else:
+                    await page.goto(f"https://flow.google.com/project/{project_id}", wait_until="domcontentloaded")
+                    await asyncio.sleep(1.5)
+                if os.path.exists(caminho_final) and os.path.getsize(caminho_final) > 10000:
+                    return True
+    except Exception as e:
+        print(f"    [!] Aviso no download via /edit/<edit_id>: {e}")
+        try:
+            project_id = params.get("projectId", "")
+            if project_id and "/edit/" in page.url:
+                await page.goto(f"https://flow.google.com/project/{project_id}", wait_until="domcontentloaded")
+                await asyncio.sleep(1.5)
+        except Exception:
+            pass
+
+    # 2. Fallback Classico (<video src="..."> no Grid)
     try:
         video_src = None
-        for _ in range(10):
+        for _ in range(4):
             video_src = await page.evaluate(
                 """(mId) => {
                 const v = document.querySelector(`video[src*="${mId}"]`);
