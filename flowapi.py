@@ -763,6 +763,9 @@ def extrair_media_id_video(body, project_id=""):
                     inner = json.loads(inner_str)
                     if rpc_id == poll_rpc:
                         if inner and len(inner) > 2 and inner[2]:
+                            for _it in inner[2]:
+                                if _it and isinstance(_it[0], str) and _it[0] not in IDS_VIDEO_CONHECIDOS:
+                                    return _it[0], None
                             return inner[2][0][0], None
                     if rpc_id in sels["rpc_ids"]["video_generate"]:
                         if inner and len(inner) > 3 and inner[3]:
