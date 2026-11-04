@@ -1048,7 +1048,43 @@ async def baixar_video(page, media_id, caminho_final, params):
         if edit_id and project_id:
             edit_url = f"https://flow.google.com/project/{project_id}/edit/{edit_id}"
             await page.goto(edit_url, wait_until="domcontentloaded")
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.0)
+
+            v_src = None
+            for _ in range(16):
+                v_src = await page.evaluate("() => { const v = document.querySelector('video'); return (v && v.src) ? v.src : null; }")
+                if v_src:
+                    break
+                await asyncio.sleep(0.5)
+
+            if v_src:
+                b64_data = await page.evaluate(
+                    """async (u) => {
+                    try {
+                        const r = await fetch(u, {credentials: 'include'});
+                        if (!r.ok) return null;
+                        const buf = await r.arrayBuffer();
+                        const bytes = new Uint8Array(buf);
+                        let binary = '';
+                        const chunk = 0x8000;
+                        for (let i = 0; i < bytes.length; i += chunk) {
+                            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+                        }
+                        return btoa(binary);
+                    } catch (e) {
+                        return null;
+                    }
+                }""",
+                    v_src,
+                )
+                if b64_data:
+                    with open(caminho_final, "wb") as f:
+                        f.write(base64.b64decode(b64_data))
+                    await page.goto(f"https://flow.google.com/project/{project_id}", wait_until="domcontentloaded")
+                    await asyncio.sleep(1.2)
+                    if os.path.exists(caminho_final) and os.path.getsize(caminho_final) > 10000:
+                        return True
+
             dl_btn = page.locator('button[aria-label="Download media"], button[aria-label*="Download"]').first
             for _ in range(15):
                 if await dl_btn.count() > 0:
