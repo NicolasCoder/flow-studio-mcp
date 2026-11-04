@@ -1253,3 +1253,172 @@ async def baixar_imagem(page, media_id, caminho_final, params):
 
     return False
 
+# --- CLOUD_BATCH_4X_HOTPATCH ---
+MAX_CLOUD_VIDEO_BATCH = 4
+
+
+async def _batch_aware_process_single_job(daemon_self, job: dict):
+    import sys as _sys
+    main_mod = _sys.modules.get("__main__")
+    db_save_job = getattr(main_mod, "db_save_job", lambda j: None)
+
+    tipo_check = (job.get("tipo") or "video").lower().strip()
+    is_img = tipo_check in ("image", "img", "imagem")
+    if is_img:
+        return await daemon_self._orig_process_single_job(job)
+
+    # Video job: pull up to 3 more queued video jobs for 4x parallel cloud TPU rendering
+    extra = []
+    queued_candidates = [
+        j for j in daemon_self.jobs.values()
+        if j.get("status") == "queued"
+        and j.get("job_id") != job.get("job_id")
+        and (j.get("tipo") or "video").lower().strip() not in ("image", "img", "imagem")
+    ]
+    queued_candidates.sort(key=lambda x: (int(x.get("priority", 100)), x.get("created_at", "")))
+    batch = [job] + queued_candidates[: MAX_CLOUD_VIDEO_BATCH - 1]
+    for bj in batch:
+        bj["tipo"] = "video"
+        bj["status"] = "running"
+        db_save_job(bj)
+
+    rendering_jobs = []
+    try:
+        async with daemon_self.browser_lock:
+            page, params, logado = await daemon_self.ensure_browser_and_page(ensure_project=True)
+            if not logado:
+                await posicionar_janela_chrome(page, invisivel=False)
+                daemon_self.invisivel = False
+                for bj in batch:
+                    bj["status"] = "failed"
+                    bj["error"] = "Usuario nao esta logado no Google Flow."
+                    db_save_job(bj)
+                    ev = daemon_self.job_events.get(bj["job_id"])
+                    if ev:
+                        ev.set()
+                return
+
+            # Phase A: Dispatch up to 4 video jobs back-to-back to Google Flow Cloud
+            for idx_b, bj in enumerate(batch):
+                b_id = bj["job_id"]
+                daemon_self.active_job_id = b_id
+                try:
+                    assinatura = (
+                        "video",
+                        bool(bj.get("imagem_in") or bj.get("imagem_out")),
+                        bool(bj.get("ingredientes")),
+                        bj.get("modelo"),
+                        bj.get("proporcao"),
+                        bj.get("duracao"),
+                        bj.get("resolucao"),
+                        bj.get("quantidade"),
+                    )
+                    if assinatura != daemon_self.last_config_signature:
+                        await configurar_geracao(page, bj, daemon_self.config_padrao)
+                        daemon_self.last_config_signature = assinatura
+
+                    params = await obter_parametros_pagina(page)
+                    media_id = await gerar_video(page, bj, params)
+                    if not media_id:
+                        await asyncio.sleep(2.0)
+                        params = await obter_parametros_pagina(page)
+                        media_id = await gerar_video(page, bj, params)
+
+                    if not media_id:
+                        raise RuntimeError("Falha ao disparar geracao no Google Flow (media_id vazio).")
+
+                    bj["media_id"] = media_id
+                    bj["status"] = "rendering"
+                    db_save_job(bj)
+                    rendering_jobs.append(bj)
+                    if idx_b + 1 < len(batch):
+                        await asyncio.sleep(1.5)
+                except Exception as e_disp:
+                    bj["status"] = "failed"
+                    bj["error"] = str(e_disp)
+                    db_save_job(bj)
+                    ev = daemon_self.job_events.get(b_id)
+                    if ev:
+                        ev.set()
+
+            # Phase B: Poll all active cloud renders in parallel and download each as it completes
+            for tentativa in range(115):
+                if not rendering_jobs:
+                    break
+                await asyncio.sleep(3.5)
+                params = await obter_parametros_pagina(page)
+                for rj in list(rendering_jobs):
+                    r_id = rj["job_id"]
+                    m_id = rj["media_id"]
+                    daemon_self.active_job_id = r_id
+                    try:
+                        pronto, _ = await checar_status(page, m_id, params, "video")
+                    except Exception as e_poll:
+                        rj["status"] = "failed"
+                        rj["error"] = str(e_poll)
+                        db_save_job(rj)
+                        rendering_jobs.remove(rj)
+                        ev = daemon_self.job_events.get(r_id)
+                        if ev:
+                            ev.set()
+                        continue
+
+                    if pronto:
+                        caminho_final = daemon_self.resolver_caminho_saida(rj)
+                        rj["status"] = "downloading"
+                        db_save_job(rj)
+                        sucesso = await baixar_video(page, m_id, caminho_final, params)
+                        if sucesso and os.path.exists(caminho_final):
+                            rj["file_path"] = caminho_final
+                            rj["status"] = "completed"
+                            rj["error"] = ""
+                        else:
+                            rj["status"] = "failed"
+                            rj["error"] = f"Midia gerada (ID: {m_id}), mas houve falha ao baixar para {caminho_final}."
+                        db_save_job(rj)
+                        rendering_jobs.remove(rj)
+                        ev = daemon_self.job_events.get(r_id)
+                        if ev:
+                            ev.set()
+
+            # Any leftover jobs after timeout
+            for rj in list(rendering_jobs):
+                r_id = rj["job_id"]
+                m_id = rj["media_id"]
+                caminho_final = daemon_self.resolver_caminho_saida(rj)
+                sucesso = await baixar_video(page, m_id, caminho_final, params)
+                if sucesso and os.path.exists(caminho_final):
+                    rj["file_path"] = caminho_final
+                    rj["status"] = "completed"
+                    rj["error"] = ""
+                else:
+                    rj["status"] = "failed"
+                    rj["error"] = f"Timeout aguardando renderizacao/download (ID: {m_id})."
+                db_save_job(rj)
+                rendering_jobs.remove(rj)
+                ev = daemon_self.job_events.get(r_id)
+                if ev:
+                    ev.set()
+    finally:
+        daemon_self.active_job_id = None
+        for bj in batch:
+            if bj.get("status") in ("running", "rendering", "downloading"):
+                bj["status"] = "failed"
+                bj["error"] = bj.get("error") or "Interrompido no lote de video"
+                db_save_job(bj)
+            ev = daemon_self.job_events.get(bj["job_id"])
+            if ev:
+                ev.set()
+
+
+def _install_batch_hotpatch():
+    import sys as _sys, types as _types
+    main_mod = _sys.modules.get("__main__")
+    if main_mod and hasattr(main_mod, "daemon"):
+        d = getattr(main_mod, "daemon")
+        if not hasattr(d, "_orig_process_single_job"):
+            d._orig_process_single_job = d.process_single_job
+        d.process_single_job = _types.MethodType(_batch_aware_process_single_job, d)
+
+
+_install_batch_hotpatch()
