@@ -1065,7 +1065,7 @@ async def obter_url_video_via_rpc_as29s(page, media_id, params):
                 params.get("pathname", f"/project/{params.get('projectId', '')}"),
             ],
         )
-        for line in (res_txt or "").split("\n"):
+        for line in (res_txt or "").splitlines():
             line = line.strip()
             if line.startswith("[") and "as29s" in line:
                 try:
