@@ -1011,7 +1011,7 @@ async def checar_status(page, media_id, params, tipo="video"):
                         status_arr = item_data[5][8]
                         if status_arr == [3]:
                             return True, inner
-                        if isinstance(status_arr, list) and len(status_arr) > 0 and status_arr[0] == 4:
+                        if isinstance(status_arr, list) and len(status_arr) > 0 and (status_arr[0] in (4, 5, 6, 7) or "ERROR" in str(status_arr).upper()):
                             raise RuntimeError(f"Geracao rejeitada pelo Google Flow: {status_arr}")
                     except RuntimeError:
                         raise
@@ -1413,7 +1413,7 @@ async def _batch_aware_process_single_job(daemon_self, job: dict):
                         ev.set()
 
             # Phase B: Poll all active cloud renders in parallel and download each as it completes
-            for tentativa in range(115):
+            for tentativa in range(50):
                 if not rendering_jobs:
                     break
                 await asyncio.sleep(3.5)
@@ -1457,7 +1457,7 @@ async def _batch_aware_process_single_job(daemon_self, job: dict):
                 r_id = rj["job_id"]
                 m_id = rj["media_id"]
                 caminho_final = daemon_self.resolver_caminho_saida(rj)
-                sucesso = await baixar_video(page, m_id, caminho_final, params)
+                sucesso = False
                 if sucesso and os.path.exists(caminho_final):
                     rj["file_path"] = caminho_final
                     rj["status"] = "completed"
