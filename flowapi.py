@@ -954,17 +954,7 @@ async def gerar_imagem(page, item, params):
 
             novo_src = None
             dom_id = None
-            m_url = re.search(
-                r'https://flow-content\.google/image/([0-9a-f\-]{36})[^"\\\s]*',
-                body.replace("\\u003d", "=").replace("\\u0026", "&").replace("\\/", "/"),
-            )
-            if m_url:
-                novo_src = m_url.group(0)
-                dom_id = m_url.group(1)
-
             for _ in range(45):
-                if novo_src:
-                    break
                 await asyncio.sleep(1)
                 infos = await page.evaluate(
                     f"""() => {{
