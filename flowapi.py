@@ -535,6 +535,10 @@ async def criar_projeto(page):
                 editor = page.locator(sels["prompt_editor"])
                 if await editor.count() > 0:
                     await asyncio.sleep(1.5)
+                    rc_cnt = await page.locator('iframe[src*="recaptcha/enterprise/anchor"]').count()
+                    if rc_cnt == 0:
+                        await page.reload(wait_until="domcontentloaded")
+                        await asyncio.sleep(3.0)
                     return True
             await asyncio.sleep(1)
     except Exception as e:
@@ -860,6 +864,29 @@ async def gerar_video(page, item, params):
 URLS_IMAGEM_POR_ID = {}
 
 
+async def _digitar_prompt_humanizado(page, editor, prompt: str):
+    """Simula telemetria real de mouse + cadencia de teclado para score maximo no reCAPTCHA Enterprise."""
+    try:
+        await page.mouse.move(random.randint(360, 520), random.randint(380, 480), steps=8)
+        await asyncio.sleep(0.12)
+        box = await editor.bounding_box()
+        if box:
+            await page.mouse.move(box["x"] + box["width"] * 0.35, box["y"] + box["height"] * 0.5, steps=8)
+    except Exception:
+        pass
+    await editor.click()
+    await page.keyboard.press("Control+A")
+    await page.keyboard.press("Backspace")
+    await asyncio.sleep(0.15)
+    if len(prompt) <= 65:
+        await page.keyboard.type(prompt, delay=12)
+    else:
+        await page.keyboard.type(prompt[:36], delay=11)
+        await page.keyboard.insert_text(prompt[36:-14])
+        await page.keyboard.type(prompt[-14:], delay=14)
+    await asyncio.sleep(0.55)
+
+
 async def gerar_imagem(page, item, params):
     sels_all = carregar_seletores()
     sels = sels_all["selectors"]
@@ -867,68 +894,99 @@ async def gerar_imagem(page, item, params):
     img_tile_sel = sels["image_tile_img"]
     prompt = item.get("prompt", "")
     try:
-        srcs_antes = set(
-            await page.evaluate(
-                f"""() => {{
-            return Array.from(document.querySelectorAll('{img_tile_sel}'))
-                .map(img => img.src)
-                .filter(Boolean);
-        }}"""
-            )
-        )
+        if await page.locator('iframe[src*="recaptcha/enterprise/anchor"]').count() == 0:
+            await page.reload(wait_until="domcontentloaded")
+            await asyncio.sleep(3.2)
+            await configurar_geracao(page, item, carregar_config())
 
-        await aplicar_frames_e_ingredientes(page, item)
-
-        editor = page.locator(sels["prompt_editor"]).first
-        await editor.click()
-        await page.keyboard.press("Control+A")
-        await page.keyboard.press("Backspace")
-        await editor.fill(prompt)
-        await asyncio.sleep(0.5)
-
-        gen_btn = page.locator(sels["start_generation_btn"]).first
-
-        def is_img_gen_rpc(r):
-            return any(f"rpcids={rpc}" in r.url for rpc in img_rpcs)
-
-        async with page.expect_response(is_img_gen_rpc, timeout=60000) as resp_info:
-            await gen_btn.click()
-
-        resp = await resp_info.value
-        if resp.status != 200:
-            return None
-
-        media_id = None
-        try:
-            body = await resp.text()
-            media_id, _ = extrair_media_id_ogiz0b(body, params.get("projectId", ""))
-        except Exception:
-            media_id = None
-
-        novo_src = None
-        dom_id = None
-        for _ in range(60):
-            await asyncio.sleep(1)
-            infos = await page.evaluate(
-                f"""() => {{
-                return Array.from(document.querySelectorAll('{img_tile_sel}')).map(img => ({{
-                    src: img.src || '',
-                    id: img.getAttribute('data-media-id') || ''
-                }})).filter(x => x.src && !x.src.includes('perlin.png'));
+        for attempt in range(2):
+            srcs_antes = set(
+                await page.evaluate(
+                    f"""() => {{
+                return Array.from(document.querySelectorAll('{img_tile_sel}'))
+                    .map(img => img.src)
+                    .filter(Boolean);
             }}"""
+                )
             )
-            for info in infos:
-                if info["src"] not in srcs_antes:
-                    novo_src = info["src"]
-                    dom_id = info["id"]
-                    break
-            if novo_src:
-                break
 
-        final_id = dom_id or media_id or (f"img_{random.randint(100000, 999999)}" if novo_src else None)
-        if final_id and novo_src:
-            URLS_IMAGEM_POR_ID[final_id] = novo_src
-        return final_id
+            await aplicar_frames_e_ingredientes(page, item)
+
+            editor = page.locator(sels["prompt_editor"]).first
+            await _digitar_prompt_humanizado(page, editor, prompt)
+
+            gen_btn = page.locator(sels["start_generation_btn"]).first
+            try:
+                gbox = await gen_btn.bounding_box()
+                if gbox:
+                    await page.mouse.move(gbox["x"] + gbox["width"] * 0.5, gbox["y"] + gbox["height"] * 0.5, steps=7)
+                    await asyncio.sleep(0.12)
+            except Exception:
+                pass
+
+            def is_img_gen_rpc(r):
+                return any(f"rpcids={rpc}" in r.url for rpc in img_rpcs)
+
+            async with page.expect_response(is_img_gen_rpc, timeout=60000) as resp_info:
+                await gen_btn.click()
+
+            resp = await resp_info.value
+            if resp.status != 200:
+                return None
+
+            media_id = None
+            body = ""
+            try:
+                body = await resp.text()
+                media_id, _ = extrair_media_id_ogiz0b(body, params.get("projectId", ""))
+            except Exception:
+                media_id = None
+
+            if "UNUSUAL_ACTIVITY" in body and attempt == 0:
+                print("[!] Auto-Healing Flow: PUBLIC_ERROR_UNUSUAL_ACTIVITY detectado. Recarregando sessao reCAPTCHA e tentando novamente...")
+                await page.reload(wait_until="domcontentloaded")
+                await asyncio.sleep(3.5)
+                await configurar_geracao(page, item, carregar_config())
+                continue
+
+            if "UNUSUAL_ACTIVITY" in body or ("ERROR" in body and not media_id):
+                return None
+
+            novo_src = None
+            dom_id = None
+            m_url = re.search(
+                r'https://flow-content\.google/image/([0-9a-f\-]{36})[^"\\\s]*',
+                body.replace("\\u003d", "=").replace("\\u0026", "&").replace("\\/", "/"),
+            )
+            if m_url:
+                novo_src = m_url.group(0)
+                dom_id = m_url.group(1)
+
+            for _ in range(45):
+                if novo_src:
+                    break
+                await asyncio.sleep(1)
+                infos = await page.evaluate(
+                    f"""() => {{
+                    return Array.from(document.querySelectorAll('{img_tile_sel}')).map(img => ({{
+                        src: img.src || '',
+                        id: img.getAttribute('data-media-id') || ''
+                    }})).filter(x => x.src && !x.src.includes('perlin.png'));
+                }}"""
+                )
+                for info in infos:
+                    if info["src"] not in srcs_antes:
+                        novo_src = info["src"]
+                        dom_id = info["id"]
+                        break
+                if novo_src:
+                    break
+
+            final_id = dom_id or media_id or (f"img_{random.randint(100000, 999999)}" if novo_src else None)
+            if final_id and novo_src:
+                URLS_IMAGEM_POR_ID[final_id] = novo_src
+            return final_id
+        return None
     except Exception as e:
         print(f"[X] Erro ao disparar geracao de imagem: {e}")
         return None
